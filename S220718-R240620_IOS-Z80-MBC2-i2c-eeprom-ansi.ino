@@ -1654,9 +1654,8 @@ void printOsName(byte currentDiskSet)
 // Print the current Disk Set number and the OS name, if it is defined.
 // The OS name is inside the file defined in DS_OSNAME
 {
-  if(ansisupport) { ansi.foreground(ansi.green); }
-  Serial.print(F("Disk Set "));
   if(ansisupport) { ansi.bold(); ansi.foreground(ansi.white); }
+  Serial.print(F("Disk Set "));
   Serial.print(currentDiskSet);
   OsName[2] = currentDiskSet + 48;    // Set the Disk Set
   openSD(OsName);                     // Open file with the OS name

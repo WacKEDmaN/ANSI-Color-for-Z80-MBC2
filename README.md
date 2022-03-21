@@ -9,7 +9,7 @@ ANSI color support
 fixed day of week,
 cleaned up commened code
 
-# Enable Compiler LTO to fit more in..
+## Enable Compiler LTO to fit more in..
 
 Disabled:
 Sketch uses 30436 bytes (94%) of program storage space. Maximum is 32256 bytes.

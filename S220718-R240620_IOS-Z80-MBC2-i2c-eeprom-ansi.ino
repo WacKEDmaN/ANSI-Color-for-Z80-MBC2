@@ -536,6 +536,19 @@ void write2Wire(byte halfByte, bool isData, bool enable, bool backlight)
 // RTC Module routines
 //
 // ------------------------------------------------------------------------------
+
+int weekday(int year, int month, int day)
+/* Calculate day of week in proleptic Gregorian calendar. Sunday == 0. */
+{
+  int adjustment, mm, yy;
+  if (year<2000) year+=2000;
+  adjustment = (14 - month) / 12;
+  mm = month + 12 * adjustment - 2;
+  yy = year - adjustment;
+  return (day + (13 * mm - 1) / 5 +
+    yy + yy / 4 - yy / 100 + yy / 400) % 7;
+}
+
 byte decToBcd(byte value)
 // Convert a binary byte to a two digits BCD byte
 {
@@ -562,25 +575,7 @@ void readRTC(byte *second, byte *minute, byte *hour, byte *dow, byte *day, byte 
   *year = bcdToDec(readRegister(moduleRTC, 0x06, 8));
   *tempC = readRegister(moduleRTC, 0x11, 8) + (readRegister(moduleRTC, 0x12, 7) * .5) + (readRegister(moduleRTC, 0x12, 6) * .25);
 }
-/*void readRTC(byte *second, byte *minute, byte *hour, byte *day, byte *month, byte *year, float *tempC)
-// Read current date/time binary values and the temprerature (2 complement) from the DS3231 RTC
-{
-  byte    i;
-  Wire.beginTransmission(DS3231_RTC);
-  Wire.write(DS3231_SECRG);                       // Set the DS3231 Seconds Register
-  Wire.endTransmission();
-  // Read from RTC and convert to binary
-  Wire.requestFrom(DS3231_RTC, 18);
-  *second = bcdToDec(Wire.read() & 0x7f);
-  *minute = bcdToDec(Wire.read());
-  *hour = bcdToDec(Wire.read() & 0x3f);
-  Wire.read();                                    // Jump over the DoW
-  *day = bcdToDec(Wire.read());
-  *month = bcdToDec(Wire.read());
-  *year = bcdToDec(Wire.read());
-  for (i = 0; i < 10; i++) Wire.read();           // Jump over 10 registers
-  *tempC = (Wire.read() + (0.25 * Wire.read()));
-}*/
+
 
 // ------------------------------------------------------------------------------
 void writeRTC(byte second, byte minute, byte hour, byte day, byte month, byte year)
@@ -589,25 +584,11 @@ void writeRTC(byte second, byte minute, byte hour, byte day, byte month, byte ye
   writeRegister(moduleRTC, 0x00, decToBcd(seconds));
   writeRegister(moduleRTC, 0x01, decToBcd(minutes));
   writeRegister(moduleRTC, 0x02, decToBcd(hours));
-  writeRegister(moduleRTC, 0x03, decToBcd(DayOfWeek(day, month, year)));
+  writeRegister(moduleRTC, 0x03, decToBcd(weekday(year, month, day)));
   writeRegister(moduleRTC, 0x04, decToBcd(day));
   writeRegister(moduleRTC, 0x05, (readRegister(moduleRTC, 0x05, 7) * 128) + decToBcd(month));
   writeRegister(moduleRTC, 0x06, decToBcd(year));
 }
-/*void writeRTC(byte second, byte minute, byte hour, byte day, byte month, byte year)
-// Write given date/time binary values to the DS3231 RTC
-{
-  Wire.beginTransmission(DS3231_RTC);
-  Wire.write(DS3231_SECRG);                       // Set the DS3231 Seconds Register
-  Wire.write(decToBcd(seconds));
-  Wire.write(decToBcd(minutes));
-  Wire.write(decToBcd(hours));
-  Wire.write(1);                                  // Day of week not used (always set to 1 = Sunday)
-  Wire.write(decToBcd(day));
-  Wire.write(decToBcd(month));
-  Wire.write(decToBcd(year));
-  Wire.endTransmission();
-}*/
 
 // ------------------------------------------------------------------------------
 bool autoSetRTC()
@@ -632,12 +613,17 @@ bool autoSetRTC()
   Serial.println(F(")"));
   if(ansisupport) { ansi.normal(); }
 
-  
+  /*
   // Print the temperaturefrom the RTC sensor  // no temp on ds1307
-  //Serial.print(F("IOS: RTC DS3231 temperature sensor: "));
-  //Serial.print(tempC);
-  //Serial.println(F("*C"));
-   
+  if(ansisupport) { ansi.bold(); ansi.foreground(ansi.yellow); }
+  Serial.print(F("IOS: "));
+  if(ansisupport) { ansi.normal(); ansi.foreground(ansi.green); }
+  Serial.print(F("RTC DS3231 temperature sensor: "));
+  if(ansisupport) { ansi.bold(); ansi.foreground(ansi.white); }
+  Serial.print(tempC);
+  Serial.println(F("*C"));
+  if(ansisupport) { ansi.normal(); }
+  */ 
   if (readRegister(moduleRTC, 0x0F, 7))              // Read the OSF "Oscillator Stop Flag"
   { // RTC oscillator stopped. RTC must be set. 
     // Convert compile time strings to numeric values
@@ -697,106 +683,23 @@ bool autoSetRTC()
   }
   return true;
 }
-/*bool autoSetRTC()
-// Check if the DS3231 RTC is present and set the date/time at compile date/time if 
-// the RTC "Oscillator Stop Flag" is set (= date/time failure).
-// Return value: 0 if RTC not present, 1 if found.
-{
-  byte    OscStopFlag;
 
-  Wire.beginTransmission(DS3231_RTC);
-  if (Wire.endTransmission() != 0) return false;      // RTC not found
-  Serial.print(F("IOS: Found RTC DS3231 Module ("));
-  printDateTime(1);
-  Serial.println(F(")"));
-
-  // Print the temperaturefrom the RTC sensor
-  Serial.print(F("IOS: RTC DS3231 temperature sensor: "));
-  Serial.print(tempC ); // Serial.print(char(146));
-  Serial.println(F("*C"));
-  
-  // Read the "Oscillator Stop Flag"
-  Wire.beginTransmission(DS3231_RTC);
-  Wire.write(DS3231_STATRG);                      // Set the DS3231 Status Register
-  Wire.endTransmission();
-  Wire.requestFrom(DS3231_RTC, 1);
-  OscStopFlag = Wire.read() & 0x80;               // Read the "Oscillator Stop Flag"
-
-  if (OscStopFlag)
-  // RTC oscillator stopped. RTC must be set at compile date/time
-  {
-    // Convert compile time strings to numeric values
-    seconds = compTimeStr.substring(6,8).toInt();
-    minutes = compTimeStr.substring(3,5).toInt();
-    hours = compTimeStr.substring(0,2).toInt();
-    day = compDateStr.substring(4,6).toInt();
-    switch (compDateStr[0]) 
-      {
-        case 'J': month = compDateStr[1] == 'a' ? 1 : month = compDateStr[2] == 'n' ? 6 : 7; break;
-        case 'F': month = 2; break;
-        case 'A': month = compDateStr[2] == 'r' ? 4 : 8; break;
-        case 'M': month = compDateStr[2] == 'r' ? 3 : 5; break;
-        case 'S': month = 9; break;
-        case 'O': month = 10; break;
-        case 'N': month = 11; break;
-        case 'D': month = 12; break;
-      };
-    year = compDateStr.substring(9,11).toInt();
-
-    // Ask for RTC setting al compile date/time
-    Serial.println(F("IOS: RTC clock failure!"));
-    Serial.print(F("\nDo you want set RTC at IOS compile time ("));
-    printDateTime(0);
-    Serial.print(F(")? [Y/N] >"));
-    timeStamp = millis();
-    do
-    {
-      blinkIOSled(&timeStamp);
-      inChar = Serial.read();
-    }
-    while ((inChar != 'y') && (inChar != 'Y') && (inChar != 'n') && (inChar != 'N'));
-    Serial.println(inChar);
- 
-    // Set the RTC at the compile date/time and print a message
-    if ((inChar == 'y') || (inChar == 'Y'))
-    {
-      writeRTC(seconds, minutes, hours, day, month, year);
-      Serial.print(F("IOS: RTC set at compile time - Now: "));
-      printDateTime(1);
-      Serial.println();
-    }
-
-    // Reset the "Oscillator Stop Flag" 
-    Wire.beginTransmission(DS3231_RTC);
-    Wire.write(DS3231_STATRG);                    // Set the DS3231 Status Register
-    Wire.write(0x08);                             // Reset the "Oscillator Stop Flag" (32KHz output left enabled)
-    Wire.endTransmission();
-  }
-  return true;
-}*/
-
-// ------------------------------------------------------------------------------
-// Print to serial the current date/time from the global variables.
-//
-// Flag readSourceFlag [0..1] usage:
-//    If readSourceFlag = 0 the RTC read is not done (using to print compile date/time)
-//    If readSourceFlag = 1 the RTC read is done (global variables are updated)
 void printDateTime(bool readSourceFlag)
 {
   if (readSourceFlag) readRTC(&seconds, &minutes, &hours, &dow, &day, &month, &year, &tempC);
-  /*
-  switch (DayOfWeek(day, month, year))
+
+switch (dow)
   {
-    case 1: { Serial.print(F("Sun")); } break;
-    case 2: { Serial.print(F("Mon")); } break;
-    case 3: { Serial.print(F("Tues")); } break;
-    case 4: { Serial.print(F("Wednes")); } break;
-    case 5: { Serial.print(F("Thurs")); } break;
-    case 6: { Serial.print(F("Fri")); } break;
-    case 7: { Serial.print(F("Satur")); } break;
+    case 0: { Serial.print(F("Sun")); } break;
+    case 1: { Serial.print(F("Mon")); } break;
+    case 2: { Serial.print(F("Tues")); } break;
+    case 3: { Serial.print(F("Wednes")); } break;
+    case 4: { Serial.print(F("Thurs")); } break;
+    case 5: { Serial.print(F("Fri")); } break;
+    case 6: { Serial.print(F("Satur")); } break;
   }
   Serial.print(F("day, "));
-  */
+  
   if(ansisupport) { ansi.bold(); ansi.foreground(ansi.white); }
   print2digit(day);
   Serial.print(F("/"));
@@ -813,26 +716,7 @@ void printDateTime(bool readSourceFlag)
   print2digit(seconds);
   if (ansisupport) { ansi.normal(); }
 }
-/*void printDateTime(byte readSourceFlag)
-// Print to serial the current date/time from the global variables.
-//
-// Flag readSourceFlag [0..1] usage:
-//    If readSourceFlag = 0 the RTC read is not done
-//    If readSourceFlag = 1 the RTC read is done (global variables are updated)
-{
-  if (readSourceFlag) readRTC(&seconds, &minutes, &hours, &day,  &month,  &year, &tempC);
-  print2digit(day);
-  Serial.print(F("/"));
-  print2digit(month);
-  Serial.print(F("/"));
-  print2digit(year);
-  Serial.print(F(" "));
-  print2digit(hours);
-  Serial.print(F(":"));
-  print2digit(minutes);
-  Serial.print(F(":"));
-  print2digit(seconds);
-}*/
+
 
 // ------------------------------------------------------------------------------
 void print2digit(byte data)
@@ -852,14 +736,7 @@ bool isLeapYear(byte yearXX)
 {
   return ( ( ( (readRegister(moduleRTC, 0x05, 7) ? 1900 : 2000) + yearXX) % 4) == 0) ? true : false;
 }
-/*byte isLeapYear(byte yearXX)
-// Check if the year 2000+XX (where XX is the argument yearXX [00..99]) is a leap year.
-// Returns 1 if it is leap, 0 otherwise.
-// This function works in the [2000..2099] years range. It should be enough...
-{
-  if (((2000 + yearXX) % 4) == 0) return 1;
-  else return 0;
-}*/
+
 
 // ------------------------------------------------------------------------------
 void ChangeRTC()
@@ -1069,174 +946,7 @@ void ChangeRTC()
   if(ansisupport) { ansi.normal(); }
 
 }
-/*void ChangeRTC()
-// Change manually the RTC Date/Time from keyboard
-{
-  byte    leapYear;   //  Set to 1 if the selected year is bissextile, 0 otherwise [0..1]
 
-  // Read RTC
-  readRTC(&seconds, &minutes, &hours, &day,  &month,  &year, &tempC);
-
-  // Change RTC date/time from keyboard
-  tempByte = 0;
-  Serial.println(F("\nIOS: RTC manual setting:"));
-  Serial.println(F("\nPress T/U to increment +10/+1 or CR to accept"));
-  do
-  {
-    do
-    {
-      Serial.print(" ");
-      switch (tempByte)
-      {
-        case 0: {
-          Serial.print(F("Year -> "));
-          print2digit(year);
-        }
-        break;
-        
-        case 1: {
-          Serial.print(F("Month -> "));
-          print2digit(month);
-        }
-        break;
-
-        case 2: {
-          Serial.print(F("             "));
-          Serial.write(13);
-          Serial.print(F(" Day -> "));
-          print2digit(day);
-        }
-        break;
-
-        case 3: {
-          Serial.print(F("Hours -> "));
-          print2digit(hours);
-        }
-        break;
-
-        case 4: {
-          Serial.print(F("Minutes -> "));
-          print2digit(minutes);
-        }
-        break;
-
-        case 5: {
-          Serial.print(F("Seconds -> "));
-          print2digit(seconds);
-        }
-        break;
-      }
-
-      timeStamp = millis();
-      do
-      {
-        blinkIOSled(&timeStamp);
-        inChar = Serial.read();
-      }
-      while ((inChar != 'u') && (inChar != 'U') && (inChar != 't') && (inChar != 'T') && (inChar != 13));
-      
-      if ((inChar == 'u') || (inChar == 'U'))
-      // Change units
-        switch (tempByte)
-        {
-          case 0: {
-            year++;
-            if (year > 99) year = 0;
-          }
-          break;
-
-          case 1: {
-            month++;
-            if (month > 12) month = 1;
-          }
-          break;
-
-          case 2: {
-            day++;
-            if (month == 2)
-            {
-              if (day > (daysOfMonth[month - 1] + isLeapYear(year))) day = 1;
-            }
-            else
-            {
-              if (day > (daysOfMonth[month - 1])) day = 1;
-            }
-          }
-          break;
-
-          case 3: {
-            hours++;
-            if (hours > 23) hours = 0;
-          }
-          break;
-
-          case 4: {
-            minutes++;
-            if (minutes > 59) minutes = 0;
-          }
-          break;
-
-          case 5: {
-            seconds++;
-            if (seconds > 59) seconds = 0;
-          }
-          break;
-        }
-      if ((inChar == 't') || (inChar == 'T'))
-      // Change tens
-        switch (tempByte)
-        {
-          case 0: {
-            year = year + 10;
-            if (year > 99) year = year - (year / 10) * 10; 
-          }
-          break;
-
-          case 1: {
-            if (month > 10) month = month - 10;
-            else if (month < 3) month = month + 10;
-          }
-          break;
-
-          case 2: {
-            day = day + 10;
-            if (day > (daysOfMonth[month - 1] + isLeapYear(year))) day = day - (day / 10) * 10;
-            if (day == 0) day = 1;
-          }
-          break;
-
-          case 3: {
-            hours = hours + 10;
-            if (hours > 23) hours = hours - (hours / 10 ) * 10;
-          }
-          break;
-
-          case 4: {
-            minutes = minutes + 10;
-            if (minutes > 59) minutes = minutes - (minutes / 10 ) * 10;
-          }
-          break;
-
-          case 5: {
-            seconds = seconds + 10;
-            if (seconds > 59) seconds = seconds - (seconds / 10 ) * 10;
-          }
-          break;
-        }
-      Serial.write(13);
-    }
-    while (inChar != 13);
-    tempByte++;
-  }
-  while (tempByte < 6);  
-
-  // Write new date/time into the RTC
-  writeRTC(seconds, minutes, hours, day, month, year);
-  Serial.println(F(" ...done      "));
-  Serial.print(F("IOS: RTC date/time updated ("));
-  printDateTime(1);
-  Serial.println(F(")"));
-}*/
 
 // ------------------------------------------------------------------------------
 byte DayOfWeek(byte day, byte month, byte year)
@@ -1547,8 +1257,9 @@ void i2cScan()
     }
   }
 //  EEPROM.update(I2Ccounter, i2cDevices);
-  if(ansisupport) { ansi.foreground(ansi.yellow); }
+  if(ansisupport) { ansi.bold(); ansi.foreground(ansi.white); }
   Serial.print(i2cDevices);
+  ansi.foreground(ansi.green);
   Serial.println(F(" I2C-devices found in total."));
   Serial.println("");
   if(ansisupport) { ansi.normal();  }
@@ -2300,38 +2011,13 @@ void setup()
   bootMode = EEPROM.read(bootModeAddr);           // Read the previous stored boot mode */
 
 PrintSystemInfo();
-/*  // search for "known" optional modules
-  Wire.beginTransmission(GPIOEXP_ADDR);
-  if (Wire.endTransmission() == 0) moduleGPIO = true; // Set to 1 if GPIO Module is found
-  
-  // Print some system information
-  Serial.println(F("\r\n\nZ80-MBC2 - A040618\r\nIOS - I/O Subsystem - S220718-R240620\r\n"));
-  if (moduleLCD) Serial.println(F("IOS: Found LCD option"));
-  // Print if the input serial buffer is 128 bytes wide (this is needed for xmodem protocol support)
-  if (SERIAL_RX_BUFFER_SIZE >= 128) Serial.println(F("IOS: Found extended serial Rx buffer"));
 
-  // Print the Z80 clock speed mode
-  Serial.print(F("IOS: Z80 clock set at "));
-  Serial.print(CLOCK * (clockMode + 1));
-  Serial.println(F("MHz"));
-
-  // Print RTC and GPIO informations if found
-  if (moduleRTC) autoSetRTC();                        // print RTC present data as needed
-  if (moduleGPIO) Serial.println(F("IOS: Found GPE Option"));
-
-  // Print CP/M Autoexec on cold boot status
-  Serial.print(F("IOS: CP/M Autoexec is "));
-  if (EEPROM.read(autoexecFlagAddr) > 1) EEPROM.update(autoexecFlagAddr, false); // Reset AUTOEXEC flag to OFF if invalid
-  autoexecFlag = EEPROM.read(autoexecFlagAddr);   // Read the previous stored AUTOEXEC flag
-  if (autoexecFlag) Serial.println(F("ON"));
-  else Serial.println(F("OFF"));
-*/
   // ----------------------------------------
   // BOOT SELECTION AND SYS PARAMETERS MENU
   // ----------------------------------------
-/*
+
   // Boot selection and system parameters menu if requested
-  bootMode = EEPROM.read(bootModeAddr);           // Read the previous stored boot mode */
+  bootMode = EEPROM.read(bootModeAddr);           // Read the previous stored boot mode 
   if ((bootSelection == true ) || (bootMode > maxBootMode))
   // Enter in the boot selection menu if USER key was pressed at startup 
   //   or an invalid bootMode code was read from internal EEPROM
@@ -2422,13 +2108,13 @@ PrintSystemInfo();
         case '6':                                   // Change the clock speed of the Z80 CPU
         {
           clockMode = !clockMode;                   // Toggle Z80 clock speed mode (High/Low)
-          // EEPROM.update(clockModeAddr, clockMode);  // Save it to the internal EEPROM
+           EEPROM.update(clockModeAddr, clockMode);  // Save it to the internal EEPROM
         }  
         break;
         case '7':                                   // Toggle CP/M AUTOEXEC execution on cold boot
         {
           autoexecFlag = !autoexecFlag;             // Toggle AUTOEXEC execution status
-          // EEPROM.update(autoexecFlagAddr, autoexecFlag); // Save it to the internal EEPROM
+           EEPROM.update(autoexecFlagAddr, autoexecFlag); // Save it to the internal EEPROM
         }
         break;
         case '8':                                   // Change current Disk Set
@@ -2479,9 +2165,9 @@ PrintSystemInfo();
         {
           bootMode = inChar - '1';                  // Calculate bootMode from inChar
           if (bootMode <= maxBootMode) {
-            // EEPROM.update(bootModeAddr, bootMode);  // Save to the internal EEPROM if required
+             EEPROM.update(bootModeAddr, bootMode);  // Save to the internal EEPROM if required
         } else { 
-            // bootMode = EEPROM.read(bootModeAddr);   // Reload boot mode if 1,2,3,4,5 choice selected
+             bootMode = EEPROM.read(bootModeAddr);   // Reload boot mode if 1,2,3,4,5 choice selected
           }
         }
         break;
@@ -2808,10 +2494,6 @@ void loop()
           if (moduleGPIO) 
           {
             writeRegister(moduleGPIO, 0x12, ioData);
-/*            Wire.beginTransmission(GPIOEXP_ADDR);
-            Wire.write(GPIOA_REG);                // Select GPIOA
-            Wire.write(ioData);                   // Write value
-            Wire.endTransmission();*/
           }
         break;
         
@@ -2825,10 +2507,6 @@ void loop()
           if (moduleGPIO) 
           {
             writeRegister(moduleGPIO, 0x13, ioData);
-/*            Wire.beginTransmission(GPIOEXP_ADDR);
-            Wire.write(GPIOB_REG);                // Select GPIOB
-            Wire.write(ioData);                   // Write value
-            Wire.endTransmission();*/
           }
         break;
         
@@ -2842,10 +2520,6 @@ void loop()
           if (moduleGPIO) 
           {
             writeRegister(moduleGPIO, 0x0, ioData);
-/*            Wire.beginTransmission(GPIOEXP_ADDR);
-            Wire.write(IODIRA_REG);               // Select IODIRA
-            Wire.write(ioData);                   // Write value
-            Wire.endTransmission();*/
           }
         break;
         
@@ -2859,10 +2533,6 @@ void loop()
           if (moduleGPIO) 
           {
             writeRegister(moduleGPIO, 0x01, ioData);
-/*            Wire.beginTransmission(GPIOEXP_ADDR);
-            Wire.write(IODIRB_REG);               // Select IODIRB
-            Wire.write(ioData);                   // Write value
-            Wire.endTransmission();*/
           }
         break;
         
@@ -2876,10 +2546,6 @@ void loop()
           if (moduleGPIO) 
           {
             writeRegister(moduleGPIO, 0x0C, ioData);
-/*            Wire.beginTransmission(GPIOEXP_ADDR);
-            Wire.write(GPPUA_REG);                // Select GPPUA
-            Wire.write(ioData);                   // Write value
-            Wire.endTransmission();*/
           }
         break;
         
@@ -2893,10 +2559,6 @@ void loop()
           if (moduleGPIO) 
           {
             writeRegister(moduleGPIO, 0x0D, ioData);
-/*            Wire.beginTransmission(GPIOEXP_ADDR);
-            Wire.write(GPPUB_REG);                // Select GPPUB
-            Wire.write(ioData);                   // Write value
-            Wire.endTransmission();*/
           }
         break;
         
@@ -3289,14 +2951,6 @@ void loop()
             if (moduleGPIO) 
             {
               ioData = readRegister(moduleGPIO, 0x12, 8);
-/*              // Set MCP23017 pointer to GPIOA
-              Wire.beginTransmission(GPIOEXP_ADDR);
-              Wire.write(GPIOA_REG);
-              Wire.endTransmission();
-              // Read GPIOA
-              Wire.beginTransmission(GPIOEXP_ADDR);
-              Wire.requestFrom(GPIOEXP_ADDR, 1);
-              ioData = Wire.read();*/
             }
           break;
 
@@ -3312,14 +2966,6 @@ void loop()
             if (moduleGPIO) 
             {
               ioData = readRegister(moduleGPIO, 0x13, 8);
-/*              // Set MCP23017 pointer to GPIOB
-              Wire.beginTransmission(GPIOEXP_ADDR);
-              Wire.write(GPIOB_REG);
-              Wire.endTransmission();
-              // Read GPIOB
-              Wire.beginTransmission(GPIOEXP_ADDR);
-              Wire.requestFrom(GPIOEXP_ADDR, 1);
-              ioData = Wire.read();*/
             }
           break;
 

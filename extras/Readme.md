@@ -9,7 +9,7 @@ xmodem cpc.bas /r
 xmodem Z80MBC2.BAS /r
 ```
 
-upload profile.sub viz xmodem then copy over original: 
+upload profile.sub via xmodem then copy over original: 
 ```
 xmodem profile.su /r
 pip profile.sub=profile.su

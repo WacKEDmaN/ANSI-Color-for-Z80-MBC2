@@ -1,0 +1,5 @@
+setdef [uk]
+setdef * a: c: k: [order=(com,sub) temporary=b]
+autoexec
+:mbasic cpc.bas
+:mbasic z80mbc2.bas

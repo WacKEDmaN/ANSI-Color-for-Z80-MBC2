@@ -3,7 +3,7 @@ install cpcfont.fon into windows
 
 load TERATERM.INI into teraterm to setup size and colors
 
-upload the .BAS file via xmodem: 
+upload the .BAS files via xmodem: 
 ```
 xmodem cpc.bas /r 
 xmodem Z80MBC2.BAS /r
